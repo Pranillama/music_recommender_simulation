@@ -17,17 +17,92 @@ Replace this paragraph with your own summary of what your version does.
 
 ## How The System Works
 
-Explain your design in plain language.
+Large-scale services (e.g. Spotify, YouTube) usually **generate many candidate** songs or videos, **score or rank** them with models trained on billions of implicit events (plays, skips, dwell time), and often **re-rank** lists for diversity, novelty, and business rules. This project does **not** mimic that pipeline: it is a **small, content-based** simulation. The focus is **interpretability**—every recommendation can be explained from a handful of song attributes and a short, explicit user profile. This version will prioritize **vibe alignment** (mood and genre matches from the profile), **numeric closeness** on energy (and room to extend to valence, danceability, tempo, acousticness when scoring), and **clear explanations** tied to those same fields.
 
-Some prompts to answer:
+**`Song` object — fields used in the simulation**
 
-- What features does each `Song` use in your system
-  - For example: genre, mood, energy, tempo
-- What information does your `UserProfile` store
-- How does your `Recommender` compute a score for each song
-- How do you choose which songs to recommend
+- **`id`** — unique catalog id  
+- **`title`, `artist`** — labels for display and explanations  
+- **`genre`, `mood`** — categorical tags matched to the user profile  
+- **`energy`, `tempo_bpm`, `valence`, `danceability`, `acousticness`** — numeric features for distance / similarity in the scorer  
 
-You can include a simple diagram or bullet list if helpful.
+**`UserProfile` object — fields used in the simulation**
+
+- **`favorite_genre`** — compared to each song’s `genre`  
+- **`favorite_mood`** — compared to each song’s `mood` (at least as important as genre for separating vibe within the same genre)  
+- **`target_energy`** — preferred level; closer `energy` on the song scores better  
+- **`likes_acoustic`** — whether to favor higher `acousticness` on tracks  
+
+The `Recommender` scores each `Song` against a `UserProfile`, applies a **ranking rule** (sort by score, take top `k`), and `explain_recommendation` summarizes *why* a song ranked well using these features.
+
+---
+
+### User Taste Profile (Phase 2 Design)
+
+The simulation uses a concrete example profile to test the scoring logic:
+
+```python
+user_prefs = {
+    "genre":        "lofi",       # favorite genre tag
+    "mood":         "chill",      # favorite mood tag
+    "target_energy": 0.40,        # preferred energy level (0.0–1.0)
+    "likes_acoustic": True,       # bonus for high acousticness
+}
+```
+
+**Profile critique:** This profile clearly separates *chill lofi* (Library Rain, Focus Flow — low energy, high acousticness) from *intense rock* (Storm Runner — high energy, low acousticness). Because `genre` and `mood` are both explicit, the scorer can distinguish a "chill jazz" track from a "chill lofi" track, giving the genre match extra weight to break ties.
+
+---
+
+### Algorithm Recipe (Phase 2 Design)
+
+Each song receives a score built from four weighted components:
+
+| Component | Points | Logic |
+|---|---|---|
+| Genre match | **+2.0** | `song.genre == user.genre` |
+| Mood match | **+1.0** | `song.mood == user.mood` |
+| Energy similarity | **+0.0 – +1.0** | `1.0 - abs(song.energy - user.target_energy)` |
+| Acoustic bonus | **+0.5** | if `user.likes_acoustic` and `song.acousticness >= 0.6` |
+
+**Maximum possible score: 4.5**
+
+Songs are then sorted descending by score, and the top `k` are returned.
+
+**Example:** For the profile above, *Library Rain* (lofi, chill, energy=0.35, acousticness=0.86) scores:
+- +2.0 genre + +1.0 mood + (1.0 − |0.35 − 0.40|) + +0.5 acoustic = **4.45**
+
+While *Storm Runner* (rock, intense, energy=0.91, acousticness=0.10) scores:
+- +0.0 + +0.0 + (1.0 − |0.91 − 0.40|) + +0.0 = **0.49**
+
+---
+
+### Data Flow (Phase 2 Design)
+
+```mermaid
+flowchart TD
+    A[User Preferences\ngenre · mood · target_energy · likes_acoustic] --> B[Load songs.csv\n20 songs]
+    B --> C{For each Song}
+    C --> D[Genre match?\n+2.0 pts]
+    C --> E[Mood match?\n+1.0 pts]
+    C --> F[Energy similarity\n+0.0–1.0 pts]
+    C --> G[Acoustic bonus?\n+0.5 pts]
+    D & E & F & G --> H[Total Score]
+    H --> I[Sort all songs\nby score descending]
+    I --> J[Return top K\nRecommendations]
+    J --> K[Explain each pick\nwhy it ranked well]
+```
+
+---
+
+### Expected Biases (Phase 2 Design)
+
+- **Genre dominance:** At +2.0 points, a genre match outweighs a perfect mood+acoustic fit (+1.5). A great *chill jazz* track will always lose to a mediocre *chill lofi* track for a lofi-preferring user.
+- **Energy range compression:** The energy similarity term is always between 0 and 1, so two songs that both miss the genre tag but have very different energies are barely distinguished.
+- **Catalog skew:** 3 of 20 songs are lofi; users who prefer less-represented genres (e.g. metal, blues) will see weaker top matches.
+- **Binary acoustic bonus:** `likes_acoustic` is a hard threshold (≥0.6), not a gradient — a song at 0.59 acousticness gets no bonus despite being nearly acoustic.
+
+📍 **Checkpoint:** You have a written concept for real-world vs. simulated recommenders, explicit `Song` / `UserProfile` fields, a weighted scoring recipe, a data-flow diagram, and documented biases.
 
 ---
 
@@ -63,6 +138,12 @@ pytest
 ```
 
 You can add more tests in `tests/test_recommender.py`.
+
+---
+
+## Terminal Output
+
+![Recommendation output](assets/termminal_output.png)
 
 ---
 
