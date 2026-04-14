@@ -1,5 +1,5 @@
 import csv
-from typing import List, Dict, Tuple
+from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 
 
@@ -31,6 +31,15 @@ class UserProfile:
 # Internal scoring helper
 # ---------------------------------------------------------------------------
 
+# Default scoring weights — change these to run experiments (see Step 3 in Phase 4)
+DEFAULT_WEIGHTS: Dict[str, float] = {
+    "genre":    2.0,   # points for an exact genre match
+    "mood":     1.0,   # points for an exact mood match
+    "energy":   1.0,   # multiplier on the 0–1 energy-similarity term
+    "acoustic": 0.5,   # bonus when user likes_acoustic and song acousticness >= 0.6
+}
+
+
 def _score(
     genre: str,
     mood: str,
@@ -40,26 +49,31 @@ def _score(
     target_mood: str,
     target_energy: float,
     likes_acoustic: bool,
+    weights: Optional[Dict[str, float]] = None,
 ) -> Tuple[float, List[str]]:
     """Compute a weighted score and reasons list from raw song and profile fields."""
+    w = weights if weights is not None else DEFAULT_WEIGHTS
     score = 0.0
     reasons = []
 
     if genre == target_genre:
-        score += 2.0
-        reasons.append(f"genre match: {genre} (+2.0)")
+        pts = w["genre"]
+        score += pts
+        reasons.append(f"genre match: {genre} (+{pts:.1f})")
 
     if mood == target_mood:
-        score += 1.0
-        reasons.append(f"mood match: {mood} (+1.0)")
+        pts = w["mood"]
+        score += pts
+        reasons.append(f"mood match: {mood} (+{pts:.1f})")
 
-    energy_sim = round(1.0 - abs(energy - target_energy), 2)
+    energy_sim = round((1.0 - abs(energy - target_energy)) * w["energy"], 2)
     score += energy_sim
     reasons.append(f"energy similarity: {energy:.2f} vs {target_energy:.2f} (+{energy_sim:.2f})")
 
     if likes_acoustic and acousticness >= 0.6:
-        score += 0.5
-        reasons.append(f"acoustic bonus: acousticness={acousticness:.2f} (+0.5)")
+        pts = w["acoustic"]
+        score += pts
+        reasons.append(f"acoustic bonus: acousticness={acousticness:.2f} (+{pts:.1f})")
 
     return round(score, 4), reasons
 
@@ -82,7 +96,11 @@ def load_songs(csv_path: str) -> List[Dict]:
     return songs
 
 
-def score_song(user_prefs: Dict, song: Dict) -> Tuple[float, List[str]]:
+def score_song(
+    user_prefs: Dict,
+    song: Dict,
+    weights: Optional[Dict[str, float]] = None,
+) -> Tuple[float, List[str]]:
     """Score a single song dict against a user-preference dict."""
     target_genre = user_prefs.get("genre", "")
     target_mood = user_prefs.get("mood", "")
@@ -98,14 +116,20 @@ def score_song(user_prefs: Dict, song: Dict) -> Tuple[float, List[str]]:
         target_mood,
         target_energy,
         likes_acoustic,
+        weights,
     )
 
 
-def recommend_songs(user_prefs: Dict, songs: List[Dict], k: int = 5) -> List[Tuple[Dict, float, str]]:
+def recommend_songs(
+    user_prefs: Dict,
+    songs: List[Dict],
+    k: int = 5,
+    weights: Optional[Dict[str, float]] = None,
+) -> List[Tuple[Dict, float, str]]:
     """Score every song, sort descending, and return the top-k as (song, score, explanation) tuples."""
     scored = []
     for song in songs:
-        s, reasons = score_song(user_prefs, song)
+        s, reasons = score_song(user_prefs, song, weights)
         explanation = " | ".join(reasons)
         scored.append((song, s, explanation))
     scored.sort(key=lambda x: x[1], reverse=True)

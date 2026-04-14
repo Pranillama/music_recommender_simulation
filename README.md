@@ -149,11 +149,49 @@ You can add more tests in `tests/test_recommender.py`.
 
 ## Experiments You Tried
 
-Use this section to document the experiments you ran. For example:
+### Profile Outputs (Phase 4)
 
-- What happened when you changed the weight on genre from 2.0 to 0.5
-- What happened when you added tempo or valence to the score
-- How did your system behave for different types of users
+Five profiles were tested. Run `python -m src.main` to reproduce all results.
+
+**High-Energy Pop** — genre=pop, mood=happy, energy=0.90
+
+![High-Energy Pop output](assets/1.png)
+
+**Chill Lofi** — genre=lofi, mood=chill, energy=0.40, likes_acoustic=True
+
+![Chill Lofi output](assets/2.png)
+
+**Deep Intense Rock** — genre=rock, mood=intense, energy=0.95
+
+![Deep Intense Rock output](assets/3.png)
+
+**Conflicting Vibe (Sad + High Energy)** — genre=blues, mood=sad, energy=0.90 *(adversarial)*
+
+![Conflicting Vibe output](assets/4.png)
+
+**Niche Acoustic Seeker** — genre=classical, mood=melancholic, energy=0.20, likes_acoustic=True *(adversarial)*
+
+![Niche Acoustic Seeker output](assets/5.png)
+
+---
+
+### Weight-Shift Experiment (Step 3)
+
+**Change tested:** Genre weight halved (2.0 → 1.0), energy multiplier doubled (×1 → ×2).
+**Profile used:** Conflicting Vibe (Sad + High Energy).
+
+| | Original weights | Experimental weights |
+|---|---|---|
+| #1 | Blue Sunday (blues/sad e=0.33) 3.43 | Blue Sunday (blues/sad e=0.33) 2.86 |
+| #2 | Rainy Soul (soul/sad e=0.38) 1.48 | **Storm Runner (rock/intense e=0.91) 1.98** |
+| #3 | Storm Runner (rock e=0.91) 0.99 | **Rainy Soul (soul/sad e=0.38) 1.96** |
+| #4 | Gym Hero (pop e=0.93) 0.97 | **Gym Hero (pop e=0.93) 1.94** |
+| #5 | Block Party (hip-hop e=0.85) 0.95 | **Block Party (hip-hop e=0.85) 1.90** |
+
+**Finding:** Blue Sunday stayed #1 even after halving genre weight because its
+genre+mood bonus (2.0 pts) still beat the field. However, #2–5 completely reshuffled
+toward high-energy songs once energy was worth 2× as much. This confirms the energy
+signal is present in the data but suppressed by the default weights.
 
 ---
 
@@ -173,14 +211,29 @@ You will go deeper on this in your model card.
 
 ## Reflection
 
-Read and complete `model_card.md`:
-
 [**Model Card**](model_card.md)
 
-Write 1 to 2 paragraphs here about what you learned:
+Building VibeFinder 1.0 made the mechanics of recommendation systems feel concrete
+in a way that reading about them never did. At their core, recommenders are just
+scoring machines — every song gets a number, and the highest numbers win. The system
+doesn't "know" what good music is; it only knows how to compare attributes. What made
+the results feel convincing was the explanation string attached to each rank. Seeing
+"genre match: lofi (+2.0) | mood match: chill (+1.0)" next to a result made it feel
+personalized, even though the decision was made by adding four numbers together. That
+gap between the simplicity of the logic and the apparent intelligence of the output
+is exactly how real recommenders work — just at a much larger scale, with weights
+learned from data instead of chosen by hand.
 
-- about how recommenders turn data into predictions
-- about where bias or unfairness could show up in systems like this
+The clearest lesson about bias came from the weight experiment. Giving genre +2.0
+points seemed reasonable at design time, but testing revealed it could completely
+override a user's energy preference. A user who wanted high-energy blues music
+received a slow, quiet blues song as their top result — because the genre and mood
+match alone outscored everything else. This is a subtle kind of unfairness: the
+system appeared to serve the user while actually ignoring part of what they asked
+for. In a real product, this kind of weight imbalance could quietly push entire
+categories of users toward a narrow slice of the catalog, creating a filter bubble
+that feels personalized but is actually driven by the dataset's structure and the
+designer's assumptions.
 
 
 ---
